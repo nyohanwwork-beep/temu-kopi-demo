@@ -1,0 +1,11 @@
+{
+  "name": "Temu Kopi",
+  "short_name": "Temu Kopi",
+  "description": "Kasir, layar dapur, stok, dan laporan Temu Kopi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F7F3EB",
+  "theme_color": "#2E2520",
+  "icons": []
+}
