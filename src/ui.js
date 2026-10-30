@@ -73,3 +73,12 @@ export function toast(message, tone = "default") {
 export function initials(name) {
   return String(name).split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
+
+export function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}

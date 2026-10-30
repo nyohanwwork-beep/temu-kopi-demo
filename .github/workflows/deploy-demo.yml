@@ -27,13 +27,11 @@ jobs:
       - name: Siapkan demo statis
         run: |
           mkdir _site
-          cp index.html manifest.webmanifest service-worker.js _site/
-          cp -R src _site/src
+          cp index.html manifest.webmanifest service-worker.js .nojekyll _site/
+          cp -R src assets _site/
 
-      - name: Aktifkan GitHub Pages
+      - name: Konfigurasi GitHub Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Unggah artefak Pages
         uses: actions/upload-pages-artifact@v3
