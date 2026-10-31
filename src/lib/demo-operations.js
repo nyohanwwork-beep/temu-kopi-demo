@@ -98,7 +98,7 @@ export function buildOrderItems(cart, menus, sequence) {
 export function upsertCustomer(state, input) {
   const phone = normalizeCustomerPhone(input.phone);
   if (!phone) return { customer: null, saved: false };
-  if (!input.marketingConsent) throw new TypeError("Persetujuan pelanggan diperlukan untuk menyimpan nomor HP");
+  if (!input.contactConsent) throw new TypeError("Persetujuan penyimpanan kontak diperlukan untuk menyimpan nomor HP");
   const customers = requireStateList(state, "customers");
   const name = String(input.name ?? "").trim();
   const orderTotal = Math.max(0, Number(input.orderTotal) || 0);
@@ -110,8 +110,10 @@ export function upsertCustomer(state, input) {
       id: input.id ?? `customer-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       phone,
       name,
-      marketingConsent: true,
+      contactConsent: true,
+      marketingConsent: Boolean(input.marketingConsent),
       consentAt: orderAt,
+      marketingConsentAt: input.marketingConsent ? orderAt : null,
       firstOrderAt: orderAt,
       lastOrderAt: orderAt,
       orderCount: 0,
@@ -120,8 +122,10 @@ export function upsertCustomer(state, input) {
     customers.unshift(customer);
   }
   if (name) customer.name = name;
-  customer.marketingConsent = true;
+  customer.contactConsent = true;
+  customer.marketingConsent = Boolean(input.marketingConsent);
   customer.consentAt ||= orderAt;
+  customer.marketingConsentAt = input.marketingConsent ? orderAt : null;
   customer.lastOrderAt = orderAt;
   customer.orderCount = Number(customer.orderCount || 0) + 1;
   customer.totalSpent = Number(customer.totalSpent || 0) + orderTotal;

@@ -203,7 +203,7 @@ function editCartLine(id) {
 
 function checkoutStepOne() {
   if (!state.cart.length) return;
-  openModal(`<div class="modal"><div class="modal-header"><div><h2>Detail pesanan</h2><small>Langkah 1 dari 2</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body"><div class="stepper"><span class="active"></span><span></span></div><div class="field"><label>Jenis pesanan</label><div class="choice-grid" id="order-types"><button class="choice active" data-order-type="dine_in">${icon("utensils")}<small>Dine-in</small></button><button class="choice" data-order-type="takeaway">${icon("package")}<small>Takeaway</small></button><button class="choice" data-order-type="delivery">${icon("receipt")}<small>Delivery</small></button></div></div><div id="identity-fields" class="section-gap"></div><div class="customer-fields section-gap"><div><strong>Data pelanggan</strong><p>Opsional. Nama dapat dipakai untuk memanggil pesanan.</p></div><div class="form-grid"><div class="field"><label>Nama panggilan <span>Opsional</span></label><input class="input" id="customer-name" maxlength="60" autocomplete="name" placeholder="Contoh: Natanael" /></div><div class="field"><label>No. HP / WhatsApp <span>Opsional</span></label><input class="input" id="customer-phone" type="tel" inputmode="tel" maxlength="20" autocomplete="tel" placeholder="Contoh: 0812 3456 7890" /></div></div><label class="check-row consent-row"><input type="checkbox" id="marketing-consent" /> Pelanggan setuju menerima informasi dan promo melalui WhatsApp</label><p class="form-help">Nama tanpa nomor HP hanya dipakai untuk pesanan ini dan tidak masuk database pelanggan.</p></div><div class="field section-gap"><label>Catatan pesanan <span>Opsional</span></label><textarea class="textarea" id="order-note" maxlength="180" placeholder="Catatan umum untuk seluruh pesanan"></textarea><p class="form-help">Catatan ini terpisah dari catatan setiap menu.</p></div></div><div class="modal-footer"><button class="btn btn-secondary" data-close-modal>Batal</button><button class="btn btn-primary" id="to-payment">Lanjut pembayaran ${icon("chevron")}</button></div></div>`);
+  openModal(`<div class="modal"><div class="modal-header"><div><h2>Detail pesanan</h2><small>Langkah 1 dari 2</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body"><div class="stepper"><span class="active"></span><span></span></div><div class="field"><label>Jenis pesanan</label><div class="choice-grid" id="order-types"><button class="choice active" data-order-type="dine_in">${icon("utensils")}<small>Dine-in</small></button><button class="choice" data-order-type="takeaway">${icon("package")}<small>Takeaway</small></button><button class="choice" data-order-type="delivery">${icon("receipt")}<small>Delivery</small></button></div></div><div id="identity-fields" class="section-gap"></div><div class="customer-fields section-gap"><div><strong>Data pelanggan</strong><p>Opsional. Nama dapat dipakai untuk memanggil pesanan.</p></div><div class="form-grid"><div class="field"><label>Nama panggilan <span>Opsional</span></label><input class="input" id="customer-name" maxlength="60" autocomplete="name" placeholder="Contoh: Natanael" /></div><div class="field"><label>No. HP / WhatsApp <span>Opsional</span></label><input class="input" id="customer-phone" type="tel" inputmode="tel" maxlength="20" autocomplete="tel" placeholder="Contoh: 0812 3456 7890" /></div></div><label class="check-row consent-row"><input type="checkbox" id="contact-consent" /> Pelanggan mengizinkan penyimpanan nomor WhatsApp untuk riwayat layanan</label><label class="check-row consent-row"><input type="checkbox" id="marketing-consent" /> Opsional: pelanggan juga bersedia menerima promo melalui WhatsApp</label><p class="form-help">Nama tanpa nomor HP hanya dipakai untuk pesanan ini dan tidak masuk database pelanggan.</p></div><div class="field section-gap"><label>Catatan pesanan <span>Opsional</span></label><textarea class="textarea" id="order-note" maxlength="180" placeholder="Catatan umum untuk seluruh pesanan"></textarea><p class="form-help">Catatan ini terpisah dari catatan setiap menu.</p></div></div><div class="modal-footer"><button class="btn btn-secondary" data-close-modal>Batal</button><button class="btn btn-primary" id="to-payment">Lanjut pembayaran ${icon("chevron")}</button></div></div>`);
   let orderType = "dine_in";
   const renderIdentity = () => {
     const root = document.querySelector("#identity-fields");
@@ -216,15 +216,17 @@ function checkoutStepOne() {
   document.querySelector("#to-payment").addEventListener("click", () => {
     const customerName = document.querySelector("#customer-name")?.value.trim() || "";
     const customerPhone = document.querySelector("#customer-phone")?.value.trim() || "";
+    const contactConsent = Boolean(document.querySelector("#contact-consent")?.checked);
     const marketingConsent = Boolean(document.querySelector("#marketing-consent")?.checked);
     const tableNo = document.querySelector("#table-no")?.value.trim() || "";
     const platformNo = document.querySelector("#platform-no")?.value.trim();
     const platform = document.querySelector("#platform")?.value;
-    if (customerPhone && !marketingConsent) { toast("Centang persetujuan pelanggan untuk menyimpan nomor HP", "error"); return; }
+    if (customerPhone && !contactConsent) { toast("Minta izin pelanggan untuk menyimpan nomor HP", "error"); return; }
+    if (marketingConsent && (!customerPhone || !contactConsent)) { toast("Izin promo hanya dapat diberikan bersama nomor HP dan izin simpan kontak", "error"); return; }
     try {
       const identity = buildOrderIdentity({ orderType, tableNo, customerName, platform, platformOrderNo: platformNo });
       const normalizedPhone = normalizeCustomerPhone(customerPhone);
-      checkoutPayment({ orderType, identity, tableNo, customerName, customerPhone: normalizedPhone, marketingConsent, platform, platformNo, note: document.querySelector("#order-note")?.value.trim() || "" });
+      checkoutPayment({ orderType, identity, tableNo, customerName, customerPhone: normalizedPhone, contactConsent, marketingConsent, platform, platformNo, note: document.querySelector("#order-note")?.value.trim() || "" });
     } catch (error) { toast(error.message, "error"); }
   });
 }
@@ -260,6 +262,7 @@ function finishOrder(details, payment) {
     tableNo: details.tableNo,
     customerName: details.customerName,
     customerPhone: details.customerPhone,
+    contactConsent: details.contactConsent,
     marketingConsent: details.marketingConsent,
     note: details.note,
     status: "baru",
@@ -277,7 +280,7 @@ function finishOrder(details, payment) {
   if (!result.created) return;
   if (details.customerPhone) {
     try {
-      const customerResult = upsertCustomer(state, { phone: details.customerPhone, name: details.customerName, marketingConsent: details.marketingConsent, orderTotal: order.total, orderAt: order.createdAt });
+      const customerResult = upsertCustomer(state, { phone: details.customerPhone, name: details.customerName, contactConsent: details.contactConsent, marketingConsent: details.marketingConsent, orderTotal: order.total, orderAt: order.createdAt });
       order.customerId = customerResult.customer?.id || null;
       audit("simpan_pelanggan", details.customerName || details.customerPhone);
     } catch (error) { toast(error.message, "error"); }
