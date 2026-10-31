@@ -1,4 +1,4 @@
-const CACHE = "temu-kopi-v5";
+const CACHE = "temu-kopi-v6";
 const CORE = [
   "./",
   "./index.html",

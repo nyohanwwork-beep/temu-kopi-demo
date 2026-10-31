@@ -1,6 +1,6 @@
 import { categories } from "./data/mock-data.js";
 import { assets } from "./data/assets.js";
-import { buildOrderIdentity, buildOrderItems, createOrder, closeShift, normalizeCustomerPhone, recordStockMovement, requestRefund, restoreKitchenOrder, transitionKitchenOrder, transitionRefund, upsertCustomer } from "./lib/demo-operations.js";
+import { buildOrderIdentity, buildOrderItems, createOrder, closeShift, normalizeCustomerPhone, partitionKitchenOrders, recordStockMovement, requestRefund, restoreKitchenOrder, transitionKitchenOrder, transitionRefund, upsertCustomer } from "./lib/demo-operations.js";
 import { loadDemoState, resetDemoState, saveDemoState } from "./lib/demo-store.js";
 import { closeModal, escapeHtml, icon, initials, openModal, rupiah, status, toast } from "./ui.js";
 import {
@@ -343,11 +343,9 @@ function bindKitchen() {
 }
 
 function showKitchenHistory() {
-  const completed = state.orders
-    .filter((order) => order.status === "selesai")
-    .sort((a, b) => new Date(b.completedAt || b.createdAt) - new Date(a.completedAt || a.createdAt))
-    .slice(0, 30);
-  openModal(`<aside class="modal side-panel"><div class="modal-header"><div><h2>Riwayat dapur</h2><small>${completed.length} pesanan selesai terakhir</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body kitchen-history-list">${completed.map((order) => `<article class="history-order"><div><strong>${escapeHtml(order.orderNo)}</strong><span>${escapeHtml(order.identity)}</span><small>${new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(order.completedAt || order.createdAt))}</small></div><div class="history-order-actions"><button class="btn btn-secondary" data-restore-kitchen="${order.id}|diproses">Kembalikan ke Diproses</button><button class="btn btn-success" data-restore-kitchen="${order.id}|siap">Kembalikan ke Siap</button></div></article>`).join("") || '<div class="empty-state small"><div><h3>Belum ada riwayat</h3><p>Pesanan yang sudah diserahkan akan muncul di sini.</p></div></div>'}</div></aside>`);
+  const { history, readyCount } = partitionKitchenOrders(state.orders);
+  const recent = history.slice(0, 30);
+  openModal(`<aside class="modal side-panel"><div class="modal-header"><div><h2>Riwayat dapur</h2><small>${readyCount} siap diambil · ${history.length - readyCount} sudah diserahkan</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body kitchen-history-list">${recent.map((order) => `<article class="history-order"><div><strong>${escapeHtml(order.orderNo)}</strong><span>${escapeHtml(order.identity)}</span><small>${new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(order.completedAt || order.readyAt || order.createdAt))}</small>${status(order.status)}${order.status === "siap" ? '<small>Menunggu penyerahan kasir</small>' : ""}</div><div class="history-order-actions"><button class="btn btn-secondary" data-restore-kitchen="${order.id}|diproses">Kembalikan ke Diproses</button>${order.status === "selesai" ? `<button class="btn btn-success" data-restore-kitchen="${order.id}|siap">Kembalikan ke Siap</button>` : ""}</div></article>`).join("") || '<div class="empty-state small"><div><h3>Belum ada riwayat</h3><p>Pesanan siap dan sudah diserahkan akan muncul di sini.</p></div></div>'}</div></aside>`);
   document.querySelectorAll("[data-restore-kitchen]").forEach((button) => button.addEventListener("click", () => {
     const [orderId, nextStatus] = button.dataset.restoreKitchen.split("|");
     try {

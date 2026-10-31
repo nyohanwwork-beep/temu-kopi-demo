@@ -11,6 +11,18 @@ const KITCHEN_TRANSITIONS = {
   diproses: "siap",
 };
 
+// Siap berarti produksi dapur selesai, tetapi penyerahan tetap dikelola kasir.
+// Kedua status itu dipertahankan di data agar histori dan laporan tidak berubah.
+export function partitionKitchenOrders(orders = []) {
+  const list = Array.isArray(orders) ? orders : [];
+  const time = (order) => Date.parse(order.completedAt || order.readyAt || order.createdAt || "") || 0;
+  const active = list.filter((order) => ["baru", "diproses"].includes(order.status))
+    .sort((a, b) => time(a) - time(b));
+  const history = list.filter((order) => ["siap", "selesai"].includes(order.status))
+    .sort((a, b) => time(b) - time(a));
+  return { active, history, readyCount: history.filter((order) => order.status === "siap").length };
+}
+
 const STOCK_SIGN = {
   stok_masuk: 1,
   pemakaian: -1,
@@ -143,16 +155,20 @@ export function transitionKitchenOrder(state, orderId, nextStatus) {
     throw new Error(`Transisi dapur ${order.status} ke ${nextStatus} tidak diizinkan`);
   }
   order.status = nextStatus;
+  if (nextStatus === "siap") order.readyAt = new Date().toISOString();
   return order;
 }
 
 export function restoreKitchenOrder(state, orderId, nextStatus) {
   const order = requireStateList(state, "orders").find((entry) => entry.id === orderId);
   if (!order) throw new Error("Order tidak ditemukan");
-  if (order.status !== "selesai" || !["diproses", "siap"].includes(nextStatus)) {
-    throw new Error("Hanya pesanan selesai yang dapat dikembalikan ke antrean dapur");
-  }
+  const allowed = (order.status === "siap" && nextStatus === "diproses")
+    || (order.status === "selesai" && ["diproses", "siap"].includes(nextStatus));
+  if (!allowed) throw new Error("Hanya pesanan siap atau selesai yang boleh dipulihkan ke dapur");
   order.status = nextStatus;
+  delete order.completedAt;
+  if (nextStatus === "siap") order.readyAt = new Date().toISOString();
+  else delete order.readyAt;
   order.restoredAt = new Date().toISOString();
   return order;
 }

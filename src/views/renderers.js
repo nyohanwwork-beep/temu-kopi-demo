@@ -15,6 +15,7 @@ import {
   calculateProfitStatement,
   sortMenuPerformance,
 } from "../lib/domain/reports.js";
+import { partitionKitchenOrders } from "../lib/demo-operations.js";
 
 export const pageMeta = {
   dashboard: ["Dashboard Owner", "Ringkasan kondisi Temu Kopi hari ini"],
@@ -98,9 +99,9 @@ export function renderCashier(state) {
 function cartLine(line) { return `<div class="cart-line"><div><h3>${escapeHtml(line.name)}</h3><button class="cart-detail" data-cart-edit="${line.id}">${escapeHtml(line.variant || "Tanpa varian")}${line.note ? ` · ${escapeHtml(line.note)}` : ""} ${icon("edit")}</button><div class="qty-control"><button class="qty-btn" data-cart-dec="${line.id}" aria-label="Kurangi ${escapeHtml(line.name)}">${icon("minus")}</button><span class="qty">${line.qty}</span><button class="qty-btn" data-cart-inc="${line.id}" aria-label="Tambah ${escapeHtml(line.name)}">${icon("plus")}</button><button class="qty-btn danger" data-cart-remove="${line.id}" aria-label="Hapus ${escapeHtml(line.name)}">${icon("trash")}</button></div></div><strong>${rupiah(line.price * line.qty)}</strong></div>`; }
 
 export function renderKitchen(state) {
-  const active = state.orders.filter((order) => !["selesai", "dibatalkan"].includes(order.status)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-  const completedCount = state.orders.filter((order) => order.status === "selesai").length;
-  return `<div class="page-toolbar"><div class="kds-summary">${["baru", "diproses", "siap"].map((key) => `<div class="summary-chip"><div><small>${title(key)}</small><strong>${active.filter((order) => order.status === key).length}</strong></div>${status(key)}</div>`).join("")}</div><div class="toolbar-actions"><button class="btn btn-secondary" disabled>${icon("clock")} Urutan FIFO</button><button class="btn btn-secondary" data-action="kitchen-history">${icon("receipt")} Riwayat selesai <strong>${completedCount}</strong></button></div></div>${active.length ? `<div class="kds-grid">${active.map((order) => kitchenCard(order, state)).join("")}</div>` : `<div class="panel empty-state"><div>${icon("chef")}<h3>Antrean dapur kosong</h3><p>Pesanan selesai tersimpan di Riwayat selesai.</p></div></div>`}`;
+  const { active, history, readyCount } = partitionKitchenOrders(state.orders);
+  const counts = { baru: active.filter((o) => o.status === "baru").length, diproses: active.filter((o) => o.status === "diproses").length, siap: readyCount };
+  return `<div class="page-toolbar"><div class="kds-summary">${["baru", "diproses", "siap"].map((key) => `<div class="summary-chip"><div><small>${key === "siap" ? "Siap · di riwayat" : title(key)}</small><strong>${counts[key]}</strong></div>${status(key)}</div>`).join("")}</div><div class="toolbar-actions"><button class="btn btn-secondary" disabled>${icon("clock")} Urutan FIFO</button><button class="btn btn-secondary" data-action="kitchen-history">${icon("receipt")} Riwayat dapur <strong>${history.length}</strong></button></div></div>${active.length ? `<div class="kds-grid">${active.map((order) => kitchenCard(order, state)).join("")}</div>` : `<div class="panel empty-state"><div>${icon("chef")}<h3>Antrean dapur kosong</h3><p>${readyCount ? `${readyCount} pesanan sudah siap dan ada di Riwayat dapur. Kasir tetap dapat menyerahkannya.` : "Pesanan siap dan selesai tersimpan di Riwayat dapur."}</p></div></div>`}`;
 }
 
 function kitchenCard(order, state) {
