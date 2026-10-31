@@ -35,6 +35,87 @@ function positiveAmount(value, label) {
   return amount;
 }
 
+export function normalizeCustomerPhone(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const digits = raw.replace(/\D/g, "");
+  let national = digits;
+  if (national.startsWith("62")) national = national.slice(2);
+  if (national.startsWith("0")) national = national.slice(1);
+  if (!national.startsWith("8") || national.length < 9 || national.length > 13) {
+    throw new TypeError("Nomor HP harus berupa nomor Indonesia yang valid");
+  }
+  return `+62${national}`;
+}
+
+export function buildOrderIdentity({ orderType, tableNo = "", customerName = "", platform = "", platformOrderNo = "" }) {
+  const name = String(customerName).trim();
+  const table = String(tableNo).trim();
+  if (orderType === "dine_in") {
+    if (!table && !name) throw new TypeError("Isi nomor meja atau nama panggilan pelanggan");
+    const tableLabel = table ? `Meja ${table.padStart(2, "0")}` : "";
+    return [name, tableLabel].filter(Boolean).join(" · ");
+  }
+  if (orderType === "delivery") {
+    const orderNo = requiredText(String(platformOrderNo ?? ""), "Nomor pesanan platform");
+    const platformLabel = requiredText(String(platform ?? ""), "Platform");
+    return [name, `${platformLabel} #${orderNo}`].filter(Boolean).join(" · ");
+  }
+  return name || "Takeaway";
+}
+
+export function buildOrderItems(cart, menus, sequence) {
+  if (!Array.isArray(cart) || !Array.isArray(menus)) throw new TypeError("Keranjang dan menu wajib berupa daftar");
+  return cart.map((line, index) => {
+    const menu = menus.find((entry) => entry.id === line.id);
+    return {
+      id: `item-${sequence}-${index}`,
+      menuId: line.id,
+      menuNameSnapshot: line.name,
+      priceSnapshot: line.price,
+      hppSnapshot: menu?.hpp || 0,
+      hppCompleteSnapshot: Boolean(menu?.hppComplete),
+      qty: line.qty,
+      variant: line.variant,
+      note: String(line.note || "").trim(),
+      photo: menu?.photo,
+    };
+  });
+}
+
+export function upsertCustomer(state, input) {
+  const phone = normalizeCustomerPhone(input.phone);
+  if (!phone) return { customer: null, saved: false };
+  if (!input.marketingConsent) throw new TypeError("Persetujuan pelanggan diperlukan untuk menyimpan nomor HP");
+  const customers = requireStateList(state, "customers");
+  const name = String(input.name ?? "").trim();
+  const orderTotal = Math.max(0, Number(input.orderTotal) || 0);
+  const orderAt = input.orderAt ?? new Date().toISOString();
+  let customer = customers.find((entry) => entry.phone === phone);
+  const created = !customer;
+  if (!customer) {
+    customer = {
+      id: input.id ?? `customer-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      phone,
+      name,
+      marketingConsent: true,
+      consentAt: orderAt,
+      firstOrderAt: orderAt,
+      lastOrderAt: orderAt,
+      orderCount: 0,
+      totalSpent: 0,
+    };
+    customers.unshift(customer);
+  }
+  if (name) customer.name = name;
+  customer.marketingConsent = true;
+  customer.consentAt ||= orderAt;
+  customer.lastOrderAt = orderAt;
+  customer.orderCount = Number(customer.orderCount || 0) + 1;
+  customer.totalSpent = Number(customer.totalSpent || 0) + orderTotal;
+  return { customer, saved: true, created };
+}
+
 export function createOrder(state, input, idempotencyKey) {
   const orders = requireStateList(state, "orders");
   const key = requiredText(idempotencyKey, "Kunci idempotensi");
@@ -62,6 +143,17 @@ export function transitionKitchenOrder(state, orderId, nextStatus) {
     throw new Error(`Transisi dapur ${order.status} ke ${nextStatus} tidak diizinkan`);
   }
   order.status = nextStatus;
+  return order;
+}
+
+export function restoreKitchenOrder(state, orderId, nextStatus) {
+  const order = requireStateList(state, "orders").find((entry) => entry.id === orderId);
+  if (!order) throw new Error("Order tidak ditemukan");
+  if (order.status !== "selesai" || !["diproses", "siap"].includes(nextStatus)) {
+    throw new Error("Hanya pesanan selesai yang dapat dikembalikan ke antrean dapur");
+  }
+  order.status = nextStatus;
+  order.restoredAt = new Date().toISOString();
   return order;
 }
 

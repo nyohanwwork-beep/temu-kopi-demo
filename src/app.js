@@ -1,6 +1,6 @@
 import { categories } from "./data/mock-data.js";
 import { assets } from "./data/assets.js";
-import { createOrder, closeShift, recordStockMovement, requestRefund, transitionKitchenOrder, transitionRefund } from "./lib/demo-operations.js";
+import { buildOrderIdentity, buildOrderItems, createOrder, closeShift, normalizeCustomerPhone, recordStockMovement, requestRefund, restoreKitchenOrder, transitionKitchenOrder, transitionRefund, upsertCustomer } from "./lib/demo-operations.js";
 import { loadDemoState, resetDemoState, saveDemoState } from "./lib/demo-store.js";
 import { closeModal, escapeHtml, icon, initials, openModal, rupiah, status, toast } from "./ui.js";
 import {
@@ -49,6 +49,7 @@ function seedState() {
     expenses: initialExpenses(),
     auditLogs: initialAuditLogs(),
     inventoryMovements: [],
+    customers: [],
     settings: structuredClone(defaultSettings),
   };
 }
@@ -145,6 +146,7 @@ function bindPage() {
   bindInventory();
   bindHistory();
   bindReports();
+  bindCustomers();
   bindAccounts();
   bindSettings();
   app.querySelectorAll('[data-action="print-report"]').forEach((button) => button.addEventListener("click", () => window.print()));
@@ -201,22 +203,29 @@ function editCartLine(id) {
 
 function checkoutStepOne() {
   if (!state.cart.length) return;
-  openModal(`<div class="modal"><div class="modal-header"><div><h2>Detail pesanan</h2><small>Langkah 1 dari 2</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body"><div class="stepper"><span class="active"></span><span></span></div><div class="field"><label>Jenis pesanan</label><div class="choice-grid" id="order-types"><button class="choice active" data-order-type="dine_in">${icon("utensils")}<small>Dine-in</small></button><button class="choice" data-order-type="takeaway">${icon("package")}<small>Takeaway</small></button><button class="choice" data-order-type="delivery">${icon("receipt")}<small>Delivery</small></button></div></div><div id="identity-fields" class="section-gap"><div class="field"><label>Nomor meja</label><input class="input" id="identity" inputmode="numeric" placeholder="Contoh: 07" /></div></div><div class="field section-gap"><label>Catatan pesanan</label><textarea class="textarea" id="order-note" maxlength="180" placeholder="Opsional"></textarea></div></div><div class="modal-footer"><button class="btn btn-secondary" data-close-modal>Batal</button><button class="btn btn-primary" id="to-payment">Lanjut pembayaran ${icon("chevron")}</button></div></div>`);
+  openModal(`<div class="modal"><div class="modal-header"><div><h2>Detail pesanan</h2><small>Langkah 1 dari 2</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body"><div class="stepper"><span class="active"></span><span></span></div><div class="field"><label>Jenis pesanan</label><div class="choice-grid" id="order-types"><button class="choice active" data-order-type="dine_in">${icon("utensils")}<small>Dine-in</small></button><button class="choice" data-order-type="takeaway">${icon("package")}<small>Takeaway</small></button><button class="choice" data-order-type="delivery">${icon("receipt")}<small>Delivery</small></button></div></div><div id="identity-fields" class="section-gap"></div><div class="customer-fields section-gap"><div><strong>Data pelanggan</strong><p>Opsional. Nama dapat dipakai untuk memanggil pesanan.</p></div><div class="form-grid"><div class="field"><label>Nama panggilan <span>Opsional</span></label><input class="input" id="customer-name" maxlength="60" autocomplete="name" placeholder="Contoh: Natanael" /></div><div class="field"><label>No. HP / WhatsApp <span>Opsional</span></label><input class="input" id="customer-phone" type="tel" inputmode="tel" maxlength="20" autocomplete="tel" placeholder="Contoh: 0812 3456 7890" /></div></div><label class="check-row consent-row"><input type="checkbox" id="marketing-consent" /> Pelanggan setuju menerima informasi dan promo melalui WhatsApp</label><p class="form-help">Nama tanpa nomor HP hanya dipakai untuk pesanan ini dan tidak masuk database pelanggan.</p></div><div class="field section-gap"><label>Catatan pesanan <span>Opsional</span></label><textarea class="textarea" id="order-note" maxlength="180" placeholder="Catatan umum untuk seluruh pesanan"></textarea><p class="form-help">Catatan ini terpisah dari catatan setiap menu.</p></div></div><div class="modal-footer"><button class="btn btn-secondary" data-close-modal>Batal</button><button class="btn btn-primary" id="to-payment">Lanjut pembayaran ${icon("chevron")}</button></div></div>`);
   let orderType = "dine_in";
   const renderIdentity = () => {
     const root = document.querySelector("#identity-fields");
-    if (orderType === "dine_in") root.innerHTML = '<div class="field"><label>Nomor meja</label><input class="input" id="identity" inputmode="numeric" placeholder="Contoh: 07" /></div>';
-    if (orderType === "takeaway") root.innerHTML = '<div class="field"><label>Nama pelanggan</label><input class="input" id="identity" maxlength="60" placeholder="Nama pelanggan" /></div>';
-    if (orderType === "delivery") root.innerHTML = '<div class="form-grid"><div class="field"><label>Nama pelanggan</label><input class="input" id="identity" maxlength="60" placeholder="Nama pelanggan" /></div><div class="field"><label>Platform</label><select class="select" id="platform"><option>GoFood</option><option>GrabFood</option><option>ShopeeFood</option></select></div><div class="field wide"><label>Nomor pesanan platform</label><input class="input" id="platform-no" maxlength="50" placeholder="Contoh: GF-88231" /></div></div>';
+    if (orderType === "dine_in") root.innerHTML = '<div class="field"><label>Nomor meja <span>Opsional jika memakai nama</span></label><input class="input" id="table-no" inputmode="numeric" maxlength="10" placeholder="Contoh: 07" /><p class="form-help">Isi nomor meja atau nama panggilan pelanggan.</p></div>';
+    if (orderType === "takeaway") root.innerHTML = '<div class="verification-box"><strong>Pesanan dibawa pulang</strong><p>Nama panggilan dapat diisi di bawah agar pesanan mudah diserahkan.</p></div>';
+    if (orderType === "delivery") root.innerHTML = '<div class="form-grid"><div class="field"><label>Platform</label><select class="select" id="platform"><option>GoFood</option><option>GrabFood</option><option>ShopeeFood</option></select></div><div class="field"><label>Nomor pesanan platform</label><input class="input" id="platform-no" maxlength="50" placeholder="Contoh: GF-88231" /></div></div>';
   };
+  renderIdentity();
   document.querySelectorAll("[data-order-type]").forEach((button) => button.addEventListener("click", () => { orderType = button.dataset.orderType; document.querySelectorAll("[data-order-type]").forEach((entry) => entry.classList.toggle("active", entry === button)); renderIdentity(); }));
   document.querySelector("#to-payment").addEventListener("click", () => {
-    const identity = document.querySelector("#identity")?.value.trim();
+    const customerName = document.querySelector("#customer-name")?.value.trim() || "";
+    const customerPhone = document.querySelector("#customer-phone")?.value.trim() || "";
+    const marketingConsent = Boolean(document.querySelector("#marketing-consent")?.checked);
+    const tableNo = document.querySelector("#table-no")?.value.trim() || "";
     const platformNo = document.querySelector("#platform-no")?.value.trim();
-    if (!identity || (orderType === "delivery" && !platformNo)) { toast("Lengkapi identitas pesanan", "error"); return; }
     const platform = document.querySelector("#platform")?.value;
-    const displayIdentity = orderType === "dine_in" ? `Meja ${identity.padStart(2, "0")}` : orderType === "delivery" ? `${identity} · ${platform} #${platformNo}` : identity;
-    checkoutPayment({ orderType, identity: displayIdentity, note: document.querySelector("#order-note")?.value.trim() || "" });
+    if (customerPhone && !marketingConsent) { toast("Centang persetujuan pelanggan untuk menyimpan nomor HP", "error"); return; }
+    try {
+      const identity = buildOrderIdentity({ orderType, tableNo, customerName, platform, platformOrderNo: platformNo });
+      const normalizedPhone = normalizeCustomerPhone(customerPhone);
+      checkoutPayment({ orderType, identity, tableNo, customerName, customerPhone: normalizedPhone, marketingConsent, platform, platformNo, note: document.querySelector("#order-note")?.value.trim() || "" });
+    } catch (error) { toast(error.message, "error"); }
   });
 }
 
@@ -248,6 +257,10 @@ function finishOrder(details, payment) {
     orderNo: `TK-${sequence}`,
     orderType: details.orderType,
     identity: details.identity,
+    tableNo: details.tableNo,
+    customerName: details.customerName,
+    customerPhone: details.customerPhone,
+    marketingConsent: details.marketingConsent,
     note: details.note,
     status: "baru",
     paymentStatus: "lunas",
@@ -257,11 +270,18 @@ function finishOrder(details, payment) {
     total: payment.total,
     createdAt: new Date().toISOString(),
     cashier: state.user.name,
-    items: state.cart.map((line, index) => { const menu = state.menus.find((entry) => entry.id === line.id); return { id: `item-${sequence}-${index}`, menuId: line.id, menuNameSnapshot: line.name, priceSnapshot: line.price, hppSnapshot: menu?.hpp || 0, hppCompleteSnapshot: Boolean(menu?.hppComplete), qty: line.qty, variant: line.variant, note: line.note || details.note || "", photo: menu?.photo }; }),
+    items: buildOrderItems(state.cart, state.menus, sequence),
     payments: [{ id: `pay-${sequence}`, type: "payment", status: "berhasil", amount: payment.total, verifiedBy: state.user.name }],
   };
   const result = createOrder(state, order, `checkout-${sequence}-${timestamp}`);
   if (!result.created) return;
+  if (details.customerPhone) {
+    try {
+      const customerResult = upsertCustomer(state, { phone: details.customerPhone, name: details.customerName, marketingConsent: details.marketingConsent, orderTotal: order.total, orderAt: order.createdAt });
+      order.customerId = customerResult.customer?.id || null;
+      audit("simpan_pelanggan", details.customerName || details.customerPhone);
+    } catch (error) { toast(error.message, "error"); }
+  }
   deductOrderStock(order);
   const shift = state.shifts.find((entry) => entry.status === "terbuka" && entry.cashier === state.user.name);
   if (shift && payment.method === "tunai") { shift.cashSales += payment.total; shift.expectedCash += payment.total; }
@@ -287,7 +307,7 @@ function deductOrderStock(order) {
 }
 
 function showReceipt(order) {
-  openModal(`<div class="modal"><div class="modal-header"><div><h2>Pembayaran berhasil</h2><small class="success-text">${escapeHtml(order.orderNo)} sudah masuk ke dapur</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body receipt-preview"><span class="success-mark">${icon("check")}</span><h2>${rupiah(order.total)}</h2><p>${escapeHtml(order.identity)} · ${title(order.paymentMethod)}</p><div class="profit-stack">${order.items.map((item) => `<div class="profit-row"><span>${item.qty}x ${escapeHtml(item.menuNameSnapshot)}</span><strong>${rupiah(item.priceSnapshot * item.qty)}</strong></div>`).join("")}<div class="profit-row total"><span>Total</span><strong>${rupiah(order.total)}</strong></div></div></div><div class="modal-footer"><button class="btn btn-secondary" data-close-modal>Selesai</button><button class="btn btn-primary" id="print-new-receipt">${icon("printer")} Cetak nota</button></div></div>`);
+  openModal(`<div class="modal"><div class="modal-header"><div><h2>Pembayaran berhasil</h2><small class="success-text">${escapeHtml(order.orderNo)} sudah masuk ke dapur</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body receipt-preview"><span class="success-mark">${icon("check")}</span><h2>${rupiah(order.total)}</h2><p>${escapeHtml(order.identity)} · ${title(order.paymentMethod)}</p>${order.note ? `<div class="order-note-banner"><strong>Catatan pesanan</strong><span>${escapeHtml(order.note)}</span></div>` : ""}<div class="profit-stack">${order.items.map((item) => `<div class="profit-row"><span>${item.qty}x ${escapeHtml(item.menuNameSnapshot)}${item.note ? `<small>Catatan item: ${escapeHtml(item.note)}</small>` : ""}</span><strong>${rupiah(item.priceSnapshot * item.qty)}</strong></div>`).join("")}<div class="profit-row total"><span>Total</span><strong>${rupiah(order.total)}</strong></div></div></div><div class="modal-footer"><button class="btn btn-secondary" data-close-modal>Selesai</button><button class="btn btn-primary" id="print-new-receipt">${icon("printer")} Cetak nota</button></div></div>`);
   document.querySelector("#print-new-receipt")?.addEventListener("click", () => printReceipt(order));
 }
 
@@ -298,6 +318,7 @@ function showActiveOrders() {
     const order = state.orders.find((entry) => entry.id === button.dataset.completeOrder);
     if (!order || order.status !== "siap") return;
     order.status = "selesai";
+    order.completedAt = new Date().toISOString();
     audit("serahkan_pesanan", order.orderNo);
     closeModal();
     commit();
@@ -306,6 +327,7 @@ function showActiveOrders() {
 }
 
 function bindKitchen() {
+  app.querySelector('[data-action="kitchen-history"]')?.addEventListener("click", showKitchenHistory);
   app.querySelectorAll("[data-order-status]").forEach((button) => button.addEventListener("click", () => {
     try {
       const order = transitionKitchenOrder(state, button.dataset.orderStatus, button.dataset.nextStatus);
@@ -317,6 +339,24 @@ function bindKitchen() {
   app.querySelectorAll("[data-print-order]").forEach((button) => button.addEventListener("click", () => {
     const order = state.orders.find((item) => item.id === button.dataset.printOrder);
     if (order) printKitchenTicket(order);
+  }));
+}
+
+function showKitchenHistory() {
+  const completed = state.orders
+    .filter((order) => order.status === "selesai")
+    .sort((a, b) => new Date(b.completedAt || b.createdAt) - new Date(a.completedAt || a.createdAt))
+    .slice(0, 30);
+  openModal(`<aside class="modal side-panel"><div class="modal-header"><div><h2>Riwayat dapur</h2><small>${completed.length} pesanan selesai terakhir</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body kitchen-history-list">${completed.map((order) => `<article class="history-order"><div><strong>${escapeHtml(order.orderNo)}</strong><span>${escapeHtml(order.identity)}</span><small>${new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(order.completedAt || order.createdAt))}</small></div><div class="history-order-actions"><button class="btn btn-secondary" data-restore-kitchen="${order.id}|diproses">Kembalikan ke Diproses</button><button class="btn btn-success" data-restore-kitchen="${order.id}|siap">Kembalikan ke Siap</button></div></article>`).join("") || '<div class="empty-state small"><div><h3>Belum ada riwayat</h3><p>Pesanan yang sudah diserahkan akan muncul di sini.</p></div></div>'}</div></aside>`);
+  document.querySelectorAll("[data-restore-kitchen]").forEach((button) => button.addEventListener("click", () => {
+    const [orderId, nextStatus] = button.dataset.restoreKitchen.split("|");
+    try {
+      const order = restoreKitchenOrder(state, orderId, nextStatus);
+      audit("pulihkan_pesanan_dapur", `${order.orderNo}: ${nextStatus}`);
+      closeModal();
+      commit();
+      toast(`${order.orderNo} dikembalikan ke ${title(nextStatus)}`, "success");
+    } catch (error) { toast(error.message, "error"); }
   }));
 }
 
@@ -401,7 +441,7 @@ function bindHistory() {
 
 function showOrder(order) {
   if (!order) return;
-  openModal(`<div class="modal"><div class="modal-header"><div><h2>${escapeHtml(order.orderNo)}</h2><small>${escapeHtml(order.identity)} · ${title(order.orderType)}</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body"><div class="detail-heading">${status(order.status)}<strong>${rupiah(order.total)}</strong></div><div class="profit-stack">${order.items.map((item) => `<div class="profit-row"><span>${item.qty}x ${escapeHtml(item.menuNameSnapshot)}${item.note ? `<small>${escapeHtml(item.note)}</small>` : ""}</span><strong>${rupiah(item.priceSnapshot*item.qty)}</strong></div>`).join("")}<div class="profit-row"><span>Diskon</span><strong>- ${rupiah(order.discountTotal)}</strong></div><div class="profit-row total"><span>Total</span><strong>${rupiah(order.total)}</strong></div></div></div><div class="modal-footer"><button class="btn btn-secondary" data-close-modal>Tutup</button><button class="btn btn-primary" id="print-order">${icon("printer")} Cetak ulang nota</button></div></div>`);
+  openModal(`<div class="modal"><div class="modal-header"><div><h2>${escapeHtml(order.orderNo)}</h2><small>${escapeHtml(order.identity)} · ${title(order.orderType)}</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body"><div class="detail-heading">${status(order.status)}<strong>${rupiah(order.total)}</strong></div>${order.note ? `<div class="order-note-banner"><strong>Catatan pesanan</strong><span>${escapeHtml(order.note)}</span></div>` : ""}<div class="profit-stack">${order.items.map((item) => `<div class="profit-row"><span>${item.qty}x ${escapeHtml(item.menuNameSnapshot)}${item.note ? `<small>Catatan item: ${escapeHtml(item.note)}</small>` : ""}</span><strong>${rupiah(item.priceSnapshot*item.qty)}</strong></div>`).join("")}<div class="profit-row"><span>Diskon</span><strong>- ${rupiah(order.discountTotal)}</strong></div><div class="profit-row total"><span>Total</span><strong>${rupiah(order.total)}</strong></div></div></div><div class="modal-footer"><button class="btn btn-secondary" data-close-modal>Tutup</button><button class="btn btn-primary" id="print-order">${icon("printer")} Cetak ulang nota</button></div></div>`);
   document.querySelector("#print-order")?.addEventListener("click", () => printReceipt(order, true));
 }
 
@@ -427,6 +467,10 @@ function bindReports() {
   app.querySelector('[data-action="close-shift"]')?.addEventListener("click", closeShiftModal);
 }
 
+function bindCustomers() {
+  app.querySelector('[data-action="export-customers"]')?.addEventListener("click", exportCustomersCsv);
+}
+
 function closeShiftModal() {
   const shift = state.shifts.find((entry) => entry.status === "terbuka");
   if (!shift) return;
@@ -446,29 +490,76 @@ function closeShiftModal() {
 function bindAccounts() {
   app.querySelectorAll("[data-toggle-user]").forEach((button) => button.addEventListener("click", () => {
     const user = state.users.find((item) => item.id === button.dataset.toggleUser);
-    if (!user || user.role === "owner") return;
+    if (!user) return;
+    if (user.id === state.user.id) { toast("Akun yang sedang digunakan tidak dapat dinonaktifkan", "error"); return; }
+    if (user.role === "owner" && user.active && activeOwnerCount() <= 1) { toast("Minimal satu Owner harus tetap aktif", "error"); return; }
     user.active = !user.active;
-    audit(user.active ? "aktifkan_akun" : "nonaktifkan_akun", user.email);
+    audit(user.active ? "aktifkan_akun" : "nonaktifkan_akun", `${user.name} · ${user.email}`);
     commit();
     toast(`Akun ${user.name} ${user.active ? "diaktifkan" : "dinonaktifkan"}`, "success");
   }));
+  app.querySelectorAll("[data-edit-user]").forEach((button) => button.addEventListener("click", () => editUserModal(button.dataset.editUser)));
+  app.querySelectorAll("[data-delete-user]").forEach((button) => button.addEventListener("click", () => deleteUser(button.dataset.deleteUser)));
   app.querySelector('[data-action="add-user"]')?.addEventListener("click", addUserModal);
 }
 
+function activeOwnerCount() {
+  return state.users.filter((user) => user.role === "owner" && user.active).length;
+}
+
+function ownerCount() {
+  return state.users.filter((user) => user.role === "owner").length;
+}
+
 function addUserModal() {
-  openModal(`<div class="modal"><div class="modal-header"><h2>Tambah akun karyawan</h2><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body"><div class="form-grid"><div class="field wide"><label>Nama lengkap</label><input class="input" id="new-user-name" maxlength="80" /></div><div class="field wide"><label>Email</label><input class="input" id="new-user-email" type="email" maxlength="120" /></div><div class="field wide"><label>Peran</label><select class="select" id="new-user-role"><option value="staff_kasir">Kasir</option><option value="staff_dapur">Dapur</option></select></div></div><p class="form-help">Versi demo tidak membuat password. Akun produksi dibuat melalui Supabase Auth.</p></div><div class="modal-footer"><button class="btn btn-secondary" data-close-modal>Batal</button><button class="btn btn-primary" id="save-user">Tambah akun</button></div></div>`);
+  openModal(`<div class="modal"><div class="modal-header"><h2>Tambah akun</h2><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body"><div class="form-grid"><div class="field wide"><label>Nama lengkap</label><input class="input" id="new-user-name" maxlength="80" /></div><div class="field wide"><label>Email</label><input class="input" id="new-user-email" type="email" maxlength="120" /></div><div class="field wide"><label>Peran</label><select class="select" id="new-user-role"><option value="staff_kasir">Kasir</option><option value="staff_dapur">Dapur</option><option value="owner">Owner</option></select></div></div><p class="form-help">Maksimal empat akun Owner. Versi demo tidak membuat password; akun produksi dibuat melalui Supabase Auth.</p></div><div class="modal-footer"><button class="btn btn-secondary" data-close-modal>Batal</button><button class="btn btn-primary" id="save-user">Tambah akun</button></div></div>`);
   document.querySelector("#save-user").addEventListener("click", () => {
     const name = document.querySelector("#new-user-name").value.trim();
     const email = document.querySelector("#new-user-email").value.trim().toLowerCase();
     const role = document.querySelector("#new-user-role").value;
     if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast("Nama dan email valid wajib diisi", "error"); return; }
     if (state.users.some((user) => user.email.toLowerCase() === email)) { toast("Email sudah digunakan", "error"); return; }
+    if (role === "owner" && ownerCount() >= 4) { toast("Maksimal empat akun Owner", "error"); return; }
     state.users.push({ id: `usr-${Date.now()}`, name, email, role, active: true });
-    audit("tambah_akun", email);
+    audit("tambah_akun", `${name} · ${email} · ${roleLabel(role)}`);
     closeModal();
     commit();
     toast("Akun karyawan ditambahkan", "success");
   });
+}
+
+function editUserModal(userId) {
+  const user = state.users.find((entry) => entry.id === userId);
+  if (!user) return;
+  openModal(`<div class="modal"><div class="modal-header"><div><h2>Ubah akun</h2><small>${escapeHtml(user.email)}</small></div><button class="icon-button" data-close-modal>${icon("x")}</button></div><div class="modal-body"><div class="form-grid"><div class="field wide"><label>Nama lengkap</label><input class="input" id="edit-user-name" maxlength="80" value="${escapeHtml(user.name)}" /></div><div class="field wide"><label>Peran</label><select class="select" id="edit-user-role"><option value="staff_kasir" ${user.role === "staff_kasir" ? "selected" : ""}>Kasir</option><option value="staff_dapur" ${user.role === "staff_dapur" ? "selected" : ""}>Dapur</option><option value="owner" ${user.role === "owner" ? "selected" : ""}>Owner</option></select></div></div><p class="form-help">Semua perubahan nama dan peran dicatat dalam riwayat aktivitas.</p></div><div class="modal-footer"><button class="btn btn-secondary" data-close-modal>Batal</button><button class="btn btn-primary" id="save-user-edit">Simpan perubahan</button></div></div>`);
+  document.querySelector("#save-user-edit")?.addEventListener("click", () => {
+    const nextName = document.querySelector("#edit-user-name").value.trim();
+    const nextRole = document.querySelector("#edit-user-role").value;
+    if (!nextName) { toast("Nama wajib diisi", "error"); return; }
+    if (user.id === state.user.id && nextRole !== "owner") { toast("Peran akun yang sedang digunakan tidak dapat diturunkan", "error"); return; }
+    if (user.role === "owner" && nextRole !== "owner" && user.active && activeOwnerCount() <= 1) { toast("Minimal satu Owner harus tetap aktif", "error"); return; }
+    if (user.role !== "owner" && nextRole === "owner" && ownerCount() >= 4) { toast("Maksimal empat akun Owner", "error"); return; }
+    const before = `${user.name} · ${roleLabel(user.role)}`;
+    user.name = nextName;
+    user.role = nextRole;
+    if (user.id === state.user.id) state.user.name = nextName;
+    audit("ubah_akun", `${user.email}: ${before} menjadi ${user.name} · ${roleLabel(user.role)}`);
+    closeModal();
+    commit();
+    toast("Perubahan akun disimpan", "success");
+  });
+}
+
+function deleteUser(userId) {
+  const user = state.users.find((entry) => entry.id === userId);
+  if (!user) return;
+  if (user.id === state.user.id) { toast("Akun yang sedang digunakan tidak dapat dihapus", "error"); return; }
+  if (user.role === "owner" && user.active && activeOwnerCount() <= 1) { toast("Minimal satu Owner harus tetap aktif", "error"); return; }
+  if (!window.confirm(`Hapus akun ${user.name}? Riwayat aktivitas tetap disimpan.`)) return;
+  state.users = state.users.filter((entry) => entry.id !== user.id);
+  audit("hapus_akun", `${user.name} · ${user.email} · ${roleLabel(user.role)}`);
+  commit();
+  toast(`Akun ${user.name} dihapus`, "success");
 }
 
 function bindSettings() {
@@ -503,6 +594,14 @@ function exportTransactionsCsv() {
   toast("Spreadsheet transaksi berhasil dibuat", "success");
 }
 
+function exportCustomersCsv() {
+  const header = ["Nama", "Nomor WhatsApp", "Persetujuan Marketing", "Jumlah Transaksi", "Total Belanja", "Kunjungan Terakhir"];
+  const rows = (state.customers || []).map((customer) => [customer.name || "", customer.phone, customer.marketingConsent ? "Ya" : "Tidak", customer.orderCount || 0, customer.totalSpent || 0, customer.lastOrderAt ? new Intl.DateTimeFormat("id-ID", { dateStyle: "short", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(new Date(customer.lastOrderAt)) : ""]);
+  const csv = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  downloadBlob(`database-pelanggan-temu-kopi-${dateStamp()}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
+  toast("Database pelanggan berhasil diekspor", "success");
+}
+
 function csvCell(value) { return `"${String(value ?? "").replaceAll('"', '""')}"`; }
 function dateStamp() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(new Date()); }
 function numberText(value) { return new Intl.NumberFormat("id-ID").format(value); }
@@ -524,19 +623,19 @@ function downloadFile(url) {
 }
 
 function printReceipt(order, reprint = false) {
-  const items = order.items.map((item) => `<div class="line"><span>${item.qty}x ${escapeHtml(item.menuNameSnapshot)}${item.variant ? `<small>${escapeHtml(item.variant)}</small>` : ""}</span><b>${rupiah(item.priceSnapshot * item.qty)}</b></div>`).join("");
-  openPrintWindow(`${reprint ? "CETAK ULANG · " : ""}${escapeHtml(order.orderNo)}`, `<header><img src="${assets.logo}"/><h1>${escapeHtml(state.settings.cafeName)}</h1><p>${escapeHtml(state.settings.address)}</p></header><hr/><div class="meta"><span>${escapeHtml(order.orderNo)}</span><span>${escapeHtml(order.identity)}</span></div><div class="meta"><span>${title(order.paymentMethod)}</span><span>${escapeHtml(order.cashier)}</span></div><hr/>${items}<hr/><div class="line"><span>Subtotal</span><b>${rupiah(order.subtotal)}</b></div><div class="line"><span>Diskon</span><b>- ${rupiah(order.discountTotal)}</b></div><div class="line total"><span>TOTAL</span><b>${rupiah(order.total)}</b></div><footer>Terima kasih. Sampai bertemu kembali.</footer>`, "receipt");
+  const items = order.items.map((item) => `<div class="line"><span>${item.qty}x ${escapeHtml(item.menuNameSnapshot)}${item.variant ? `<small>${escapeHtml(item.variant)}</small>` : ""}${item.note ? `<small>Catatan: ${escapeHtml(item.note)}</small>` : ""}</span><b>${rupiah(item.priceSnapshot * item.qty)}</b></div>`).join("");
+  openPrintWindow(`${reprint ? "CETAK ULANG · " : ""}${escapeHtml(order.orderNo)}`, `<header><img src="${assets.logo}"/><h1>${escapeHtml(state.settings.cafeName)}</h1><p>${escapeHtml(state.settings.address)}</p></header><hr/><div class="meta"><span>${escapeHtml(order.orderNo)}</span><span>${escapeHtml(order.identity)}</span></div><div class="meta"><span>${title(order.paymentMethod)}</span><span>${escapeHtml(order.cashier)}</span></div><hr/>${items}${order.note ? `<div class="order-note"><b>Catatan pesanan</b><span>${escapeHtml(order.note)}</span></div>` : ""}<hr/><div class="line"><span>Subtotal</span><b>${rupiah(order.subtotal)}</b></div><div class="line"><span>Diskon</span><b>- ${rupiah(order.discountTotal)}</b></div><div class="line total"><span>TOTAL</span><b>${rupiah(order.total)}</b></div><footer>Terima kasih. Sampai bertemu kembali.</footer>`, "receipt");
 }
 
 function printKitchenTicket(order) {
   const items = order.items.map((item) => `<div class="kitchen-item"><b>${item.qty}</b><span>${escapeHtml(item.menuNameSnapshot)}${item.variant ? `<small>${escapeHtml(item.variant)}</small>` : ""}${item.note ? `<em>${escapeHtml(item.note)}</em>` : ""}</span></div>`).join("");
-  openPrintWindow(`Tiket Dapur ${escapeHtml(order.orderNo)}`, `<h1>TIKET DAPUR</h1><div class="ticket-no">${escapeHtml(order.orderNo)}</div><div class="meta"><span>${escapeHtml(order.identity)}</span><span>${title(order.orderType)}</span></div><hr/>${items}<footer>Nomor harus sama dengan nota pelanggan</footer>`, "kitchen");
+  openPrintWindow(`Tiket Dapur ${escapeHtml(order.orderNo)}`, `<h1>TIKET DAPUR</h1><div class="ticket-no">${escapeHtml(order.orderNo)}</div><div class="meta"><span>${escapeHtml(order.identity)}</span><span>${title(order.orderType)}</span></div>${order.note ? `<div class="order-note"><b>CATATAN PESANAN</b><span>${escapeHtml(order.note)}</span></div>` : ""}<hr/>${items}<footer>Panggil nama atau nomor pesanan saat siap</footer>`, "kitchen");
 }
 
 function openPrintWindow(titleText, body, kind) {
   const popup = window.open("", "_blank", "width=420,height=720");
   if (!popup) { toast("Izinkan pop-up untuk mencetak", "error"); return; }
-  popup.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>${titleText}</title><style>@page{size:80mm auto;margin:5mm}*{box-sizing:border-box}body{width:70mm;margin:0 auto;color:#2E2520;font:12px Arial,sans-serif}header{text-align:center}header img{width:42px;height:42px;object-fit:contain}h1{font-size:${kind === "kitchen" ? "22px" : "15px"};margin:6px 0}.ticket-no{text-align:center;font-size:18px;font-weight:700;margin:10px 0}.meta,.line{display:flex;justify-content:space-between;gap:10px;margin:8px 0}.line span{max-width:68%}.line small,.kitchen-item small,.kitchen-item em{display:block;color:#6D625B;margin-top:3px}.total{font-size:15px}.kitchen-item{display:grid;grid-template-columns:32px 1fr;gap:8px;padding:12px 0;border-bottom:1px dashed #E7DFD2}.kitchen-item>b{font-size:22px}.kitchen-item span{font-weight:700}.kitchen-item em{color:#B4433C}hr{border:0;border-top:1px dashed #6D625B;margin:12px 0}footer{text-align:center;margin-top:24px;color:#6D625B;font-size:10px}@media print{body{width:auto}}</style></head><body>${body}<script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script></body></html>`);
+  popup.document.write(`<!doctype html><html lang="id"><head><meta charset="utf-8"><title>${titleText}</title><style>@page{size:80mm auto;margin:5mm}*{box-sizing:border-box}body{width:70mm;margin:0 auto;color:#2E2520;font:12px Arial,sans-serif}header{text-align:center}header img{width:42px;height:42px;object-fit:contain}h1{font-size:${kind === "kitchen" ? "22px" : "15px"};margin:6px 0}.ticket-no{text-align:center;font-size:18px;font-weight:700;margin:10px 0}.meta,.line{display:flex;justify-content:space-between;gap:10px;margin:8px 0}.line span{max-width:68%}.line small,.kitchen-item small,.kitchen-item em{display:block;color:#6D625B;margin-top:3px}.order-note{display:grid;gap:4px;margin:12px 0;padding:9px;border:2px solid #B65D3C}.order-note span{overflow-wrap:anywhere}.total{font-size:15px}.kitchen-item{display:grid;grid-template-columns:32px 1fr;gap:8px;padding:12px 0;border-bottom:1px dashed #E7DFD2}.kitchen-item>b{font-size:22px}.kitchen-item span{font-weight:700}.kitchen-item em{color:#B4433C}hr{border:0;border-top:1px dashed #6D625B;margin:12px 0}footer{text-align:center;margin-top:24px;color:#6D625B;font-size:10px}@media print{body{width:auto}}</style></head><body>${body}<script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script></body></html>`);
   popup.document.close();
 }
 

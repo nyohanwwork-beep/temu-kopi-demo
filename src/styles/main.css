@@ -195,6 +195,9 @@ img { display: block; max-width: 100%; }
 .kds-item { display: grid; grid-template-columns: 26px 1fr; gap: 7px; margin: 7px 0; font-size: 12px; }
 .kds-item b { color: var(--terracotta); }
 .kds-note { margin: 10px 0 0 26px; padding: 8px; border-left: 3px solid var(--caramel); background: var(--cream); border-radius: 0 6px 6px 0; color: var(--muted); font-size: 9px; }
+.kds-note strong { display: block; margin-bottom: 3px; color: var(--terracotta); font-size: 8px; text-transform: uppercase; }
+.order-note-banner { display: grid; gap: 4px; margin-bottom: 14px; padding: 11px 12px; border: 1px solid #e4b9a7; border-left: 4px solid var(--terracotta); border-radius: 8px; background: #fff8f5; color: var(--text); font-size: 10px; }
+.order-note-banner strong { color: var(--terracotta); font-size: 9px; text-transform: uppercase; }
 .kds-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 0 15px 15px; }
 .kds-actions .btn { min-height: 52px; }
 .kds-meta { text-align: right; }
@@ -253,6 +256,14 @@ tbody tr:hover { background: #fdfbf8; }
 
 .modal-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(46,37,32,.52); backdrop-filter: blur(3px); animation: fade .15s ease; }
 .modal { width: min(560px,100%); max-height: min(780px, calc(100vh - 40px)); overflow: auto; background: var(--surface); border-radius: var(--radius-lg); box-shadow: 0 26px 70px rgba(30,20,14,.28); animation: rise .18s ease; }
+.modal-backdrop:has(.side-panel) { place-items: stretch end; padding: 0; }
+.side-panel { width: min(440px, 100%); max-height: 100vh; height: 100%; border-radius: var(--radius-lg) 0 0 var(--radius-lg); animation: slide-in .2s ease; }
+.kitchen-history-list { display: grid; gap: 10px; }
+.history-order { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--linen); border-radius: var(--radius); background: var(--surface); }
+.history-order > div:first-child { display: grid; gap: 4px; }
+.history-order span, .history-order small { color: var(--muted); font-size: 10px; }
+.history-order-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.history-order-actions .btn { min-height: 40px; padding: 0 10px; font-size: 9px; }
 .modal-header { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 15px 20px; border-bottom: 1px solid var(--linen); }
 .modal-header h2 { margin: 0; font-size: 18px; }
 .modal-body { padding: 20px; }
@@ -287,6 +298,11 @@ tbody tr:hover { background: #fdfbf8; }
 .verification-box p { color: var(--muted); font-size: 10px; line-height: 1.6; }
 .check-row { display: flex; align-items: center; gap: 9px; font-size: 11px; font-weight: 700; }
 .check-row input { width: 18px; height: 18px; accent-color: var(--terracotta); }
+.customer-fields { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--linen); border-radius: var(--radius); background: #fbf9f5; }
+.customer-fields > div:first-child > strong { font-size: 12px; }
+.customer-fields > div:first-child > p { margin: 4px 0 0; color: var(--muted); font-size: 10px; }
+.field label span { color: var(--muted); font-size: 9px; font-weight: 500; }
+.consent-row { align-items: flex-start; line-height: 1.45; }
 .receipt-preview { text-align: center; }
 .receipt-preview > h2 { margin: 0 0 8px; }
 .receipt-preview > p { color: var(--muted); font-size: 11px; }
@@ -298,6 +314,7 @@ tbody tr:hover { background: #fdfbf8; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.98); } }
 @keyframes slide { from { opacity: 0; transform: translateX(12px); } }
+@keyframes slide-in { from { opacity: 0; transform: translateX(30px); } }
 
 @media (max-width: 1180px) {
   :root { --sidebar: 214px; }
@@ -352,6 +369,11 @@ tbody tr:hover { background: #fdfbf8; }
   .login-brand h1 { font-size: 39px; }
   .role-option { grid-template-columns: 46px 1fr; }
   .role-option > .icon:last-child { display: none; }
+}
+
+@media (max-width: 480px) {
+  .side-panel { border-radius: 0; }
+  .history-order-actions { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 400px) {
